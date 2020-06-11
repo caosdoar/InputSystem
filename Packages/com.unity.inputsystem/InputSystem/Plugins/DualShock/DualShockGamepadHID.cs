@@ -199,6 +199,48 @@ namespace UnityEngine.InputSystem.DualShock.LowLevel
             };
         }
     }
+
+    [StructLayout(LayoutKind.Explicit, Size = kSize)]
+    internal unsafe struct DualShock3HIDOutputReport : IInputDeviceCommandInfo
+    {
+        public static FourCC Type => new FourCC('H', 'I', 'D', 'O');
+
+        internal const int kSize = InputDeviceCommand.kBaseCommandSize + 49;
+        internal const int kReportId = 0;
+        internal const int kCommandIdMotors = 2;
+
+        [FieldOffset(0)] public InputDeviceCommand baseCommand;
+        [FieldOffset(InputDeviceCommand.kBaseCommandSize + 0)] public byte reportId;
+        [FieldOffset(InputDeviceCommand.kBaseCommandSize + 1)] public byte commandId; // 2 = Motors
+        [FieldOffset(InputDeviceCommand.kBaseCommandSize + 5)] public byte highFrequencyMotorTime; // 0xff = forever
+        [FieldOffset(InputDeviceCommand.kBaseCommandSize + 6)] public byte highFrequencyMotor; // 0 off, 1 on
+        [FieldOffset(InputDeviceCommand.kBaseCommandSize + 7)] public byte lowFrequencyMotorTime; // 0xff = forever
+        [FieldOffset(InputDeviceCommand.kBaseCommandSize + 8)] public byte lowFrequencyMotor; // 0x00 = off, 0xff = full speed
+        [FieldOffset(InputDeviceCommand.kBaseCommandSize + 9)] public fixed byte unkown[40];
+        
+        public FourCC typeStatic => Type;
+
+        public void SetMotorSpeeds(float lowFreq, float highFreq)
+        {
+            lowFrequencyMotor = (byte)Mathf.Clamp(lowFreq * 255, 0, 255);
+            highFrequencyMotor = (byte)(highFreq >= 0.5f ? 1 : 0);
+        }
+
+        public static DualShock3HIDOutputReport Create()
+        {
+            return new DualShock3HIDOutputReport
+            {
+                baseCommand = new InputDeviceCommand(Type, kSize),
+                reportId = kReportId,
+                commandId = kCommandIdMotors,
+                highFrequencyMotorTime = 255,
+                highFrequencyMotor = 0,
+                lowFrequencyMotorTime = 255,
+                lowFrequencyMotor = 0
+            };
+        }
+    }
+
 }
 
 namespace UnityEngine.InputSystem.DualShock
@@ -312,7 +354,49 @@ namespace UnityEngine.InputSystem.DualShock
             base.FinishSetup();
         }
 
-        // TODO: see if we can implement rumble support on DualShock 3
+        public override void PauseHaptics()
+        {
+            if (!m_LowFrequencyMotorSpeed.HasValue && !m_HighFrequenceyMotorSpeed.HasValue)
+                return;
+
+            var command = DualShock3HIDOutputReport.Create();
+            command.SetMotorSpeeds(0f, 0f);
+            ExecuteCommand(ref command);
+        }
+
+        public override void ResetHaptics()
+        {
+            if (!m_LowFrequencyMotorSpeed.HasValue && !m_HighFrequenceyMotorSpeed.HasValue)
+                return;
+
+            var command = DualShock3HIDOutputReport.Create();
+            command.SetMotorSpeeds(0f, 0f);
+            ExecuteCommand(ref command);
+            m_HighFrequenceyMotorSpeed = null;
+            m_LowFrequencyMotorSpeed = null;
+        }
+
+        public override void ResumeHaptics()
+        {
+            if (!m_LowFrequencyMotorSpeed.HasValue && !m_HighFrequenceyMotorSpeed.HasValue)
+                return;
+
+            var command = DualShock3HIDOutputReport.Create();
+            command.SetMotorSpeeds(m_LowFrequencyMotorSpeed.Value, m_HighFrequenceyMotorSpeed.Value);
+            ExecuteCommand(ref command);
+        }
+
+        public override void SetMotorSpeeds(float lowFrequency, float highFrequency)
+        {
+            var command = DualShock3HIDOutputReport.Create();
+            command.SetMotorSpeeds(lowFrequency, highFrequency);
+            ExecuteCommand(ref command);
+            m_LowFrequencyMotorSpeed = lowFrequency;
+            m_HighFrequenceyMotorSpeed = highFrequency;
+        }
+
+        private float? m_LowFrequencyMotorSpeed;
+        private float? m_HighFrequenceyMotorSpeed;
     }
 }
 
